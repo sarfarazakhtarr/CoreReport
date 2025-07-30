@@ -1,0 +1,289 @@
+﻿@model List<ReportModel>
+
+<h2 style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color:#34495e; margin-bottom: 1rem;">
+    Select Report
+</h2>
+
+<select id="reportDropdown" onchange="loadSPInfo()" style="
+    width: 100%;
+    max-width: 400px;
+    padding: 10px 14px;
+    font-size: 1rem;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.05);
+    margin-bottom: 1rem;
+    transition: border-color 0.3s ease;
+">
+    <option value="">-- Select Report --</option>
+    @foreach (var r in Model)
+    {
+        <option value="@r.SP_Name">@r.ReportName</option>
+    }
+</select>
+
+<input id="spNameText" readonly style="
+    display: block;
+    max-width: 400px;
+    width: 100%;
+    margin-bottom: 1.5rem;
+    padding: 10px 14px;
+    font-size: 1rem;
+    background-color: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    color: #555;
+" placeholder="Stored Procedure Name" />
+
+<form id="spForm" style="max-width: 420px;">
+    <div id="parameterFields"></div>
+    <button type="button" onclick="executeSP()" style="
+        padding: 12px 28px;
+        font-size: 1.1rem;
+        background: linear-gradient(135deg, #3498db, #2980b9);
+        color: white;
+        border: none;
+        border-radius: 30px;
+        cursor: pointer;
+        box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
+        transition: background 0.3s ease;
+        margin-top: 1rem;
+        width: 100%;
+        max-width: 420px;
+    ">
+        Download CSV
+    </button>
+</form>
+
+@section Scripts {
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f9fbfc;
+            color: #2c3e50;
+            padding: 2rem;
+        }
+
+        label {
+            font-weight: 600;
+            margin-bottom: 6px;
+            display: block;
+            color: #34495e;
+        }
+
+        .form-group {
+            margin-bottom: 1.2rem;
+        }
+
+        input.form-control {
+            width: 100%;
+            padding: 10px 14px;
+            font-size: 1rem;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.05);
+            transition: border-color 0.3s ease;
+        }
+
+            input.form-control:focus {
+                border-color: #3498db;
+                outline: none;
+                box-shadow: 0 0 8px rgba(52, 152, 219, 0.4);
+            }
+
+            input.form-control.is-invalid {
+                border-color: #e74c3c;
+                box-shadow: none;
+            }
+
+        .invalid-feedback {
+            color: #e74c3c;
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+        }
+
+        #toast {
+            visibility: hidden;
+            min-width: 280px;
+            max-width: 90%;
+            margin-left: -140px;
+            background-color: #e74c3c;
+            color: white;
+            text-align: center;
+            border-radius: 8px;
+            padding: 16px 24px;
+            position: fixed;
+            z-index: 9999;
+            left: 50%;
+            bottom: 40px;
+            font-size: 1rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            font-weight: 600;
+            line-height: 1.3;
+            word-wrap: break-word;
+            user-select: none;
+            cursor: default;
+            opacity: 0;
+            transition: opacity 0.4s ease, visibility 0.4s ease;
+        }
+
+            #toast.show {
+                visibility: visible;
+                opacity: 1;
+            }
+    </style>
+
+    <div id="toast"></div>
+
+    <script>
+        function loadSPInfo() {
+            var spName = $('#reportDropdown').val();
+            $('#spNameText').val(spName);
+            $('#parameterFields').empty();
+
+            if (!spName) return;
+
+            $.get('/Home/GetSPParameters?spName=' + encodeURIComponent(spName), function(data) {
+                data.forEach(function(param) {
+                    var name = param.parameterName;
+                    var inputHtml = '';
+                    var label = `<label>${name}</label>`;
+                  if (/pan/i.test(name)) {
+                        inputHtml = `<input type="text" name="${name}" class="form-control" placeholder="ABCDE1234F" maxlength="10" />
+                                     <div class="invalid-feedback"></div>`;
+                    } else if (/email/i.test(name)) {
+                        inputHtml = `<input type="email" name="${name}" class="form-control" placeholder="example@mail.com" />
+                                     <div class="invalid-feedback"></div>`;
+                    } else if (/date/i.test(name)) {
+                        var today = new Date();
+                        var yyyy = today.getFullYear();
+                        var mm = String(today.getMonth() + 1).padStart(2, '0');
+                        var dd = String(today.getDate()).padStart(2, '0');
+
+                        var maxDate = `${yyyy}-${mm}-${dd}`;
+                        var minYear = yyyy - 1;
+                        var minDate = `${minYear}-${mm}-${dd}`;
+
+                        inputHtml = `<input type="date" name="${name}" class="form-control" min="${minDate}" max="${maxDate}" />
+                                     <div class="invalid-feedback"></div>`;
+                    } else {
+                        inputHtml = `<input type="text" name="${name}" class="form-control" />
+                                     <div class="invalid-feedback"></div>`;
+                    }
+
+                    $('#parameterFields').append(
+                        `<div class="form-group">${label}${inputHtml}</div>`
+                    );
+                });
+            });
+        }
+
+        function validatePAN(pan) {
+            var panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+            return panRegex.test(pan.toUpperCase());
+        }
+
+        function executeSP() {
+            var spName = $('#spNameText').val();
+            if (!spName) {
+                alert('Please select a report');
+                return;
+            }
+
+            var valid = true;
+            var errorMessages = [];
+
+            $('#parameterFields input').each(function() {
+                var $input = $(this);
+                var name = $input.attr('name');
+                var val = $input.val().trim();
+                var $errorDiv = $input.siblings('.invalid-feedback');
+
+                $input.removeClass('is-invalid');
+                $errorDiv.text('');
+
+                if (/pan/i.test(name)) {
+                    if (!val || !validatePAN(val)) {
+                        valid = false;
+                        var msg = 'Invalid PAN Card format.';
+                        errorMessages.push(msg);
+                        $input.addClass('is-invalid');
+                        $errorDiv.text(msg);
+                    }
+                } else if (/email/i.test(name)) {
+                    if (!val || !$input[0].checkValidity()) {
+                        valid = false;
+                        var msg = 'Invalid Email address.';
+                        errorMessages.push(msg);
+                        $input.addClass('is-invalid');
+                        $errorDiv.text(msg);
+                    }
+                } else if (/date/i.test(name)) {
+                    if (!val) {
+                        valid = false;
+                        var msg = 'Date is required.';
+                        errorMessages.push(msg);
+                        $input.addClass('is-invalid');
+                        $errorDiv.text(msg);
+                    } else {
+                        var inputDate = new Date(val);
+                        var today = new Date();
+                        var oneYearAgo = new Date();
+                        oneYearAgo.setFullYear(today.getFullYear() - 1);
+
+                        if (inputDate < oneYearAgo || inputDate > today) {
+                            valid = false;
+                            var msg = 'Date must be within the last one year.';
+                            errorMessages.push(msg);
+                            $input.addClass('is-invalid');
+                            $errorDiv.text(msg);
+                        }
+                    }
+                } else {
+                    if (!val) {
+                        valid = false;
+                        var msg = `${name} cannot be empty.`;
+                        errorMessages.push(msg);
+                        $input.addClass('is-invalid');
+                        $errorDiv.text(msg);
+                    }
+                }
+            });
+
+            if (!valid) {
+                showToast(errorMessages.join('<br>'));
+                return;
+            }
+
+            var formData = $('#spForm').serialize();
+
+            $.ajax({
+                url: '/Home/ExecuteSP?spName=' + encodeURIComponent(spName),
+                type: 'POST',
+                data: formData,
+                xhrFields: { responseType: 'blob' },
+                success: function(blob) {
+                    var link = document.createElement('a');
+                    link.href = window.URL.createObjectURL(blob);
+                    link.download = spName + '_Report.csv';
+                    link.click();
+                },
+                error: function() {
+                    alert('Error executing report');
+                }
+            });
+        }
+
+        function showToast(message) {
+            var toast = $('#toast');
+            toast.html(message);
+            toast.addClass('show');
+
+            setTimeout(function() {
+                toast.removeClass('show');
+            }, 4000);
+        }
+    </script>
+}

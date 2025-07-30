@@ -1,0 +1,229 @@
+﻿@model List<ReportModel>
+
+@{
+    ViewData["Title"] = "Generate Report";
+}
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+
+<div class="container mt-4">
+    <h2 class="mb-4 text-primary">@ViewData["Title"]</h2>
+
+    <form asp-action="GenerateReport" method="post" class="card p-4 shadow-sm" id="generateReportForm" onsubmit="return validateForm()">
+        <!-- Dropdown to select a report -->
+        <div class="mb-3">
+            <label for="reportId" class="form-label">Select Report:</label>
+            <select id="reportId" name="reportId" class="form-select" onchange="reportSelected()" required>
+                <option value="">--Select Report--</option>
+                @foreach (var report in Model)
+                {
+                    <option value="@report.Id">@report.ReportName</option>
+                }
+            </select>
+            <div class="invalid-feedback" id="reportIdError"></div>
+        </div>
+
+        <!-- Textbox to display Stored Procedure Name -->
+        <div id="spNameDiv" class="mb-3" style="display:none;">
+            <label for="spName" class="form-label">Stored Procedure Name:</label>
+            <input type="text" id="spName" name="spName" class="form-control" readonly />
+        </div>
+
+        <!-- Dynamic Parameters Section -->
+        <div id="parametersDiv" class="mb-3" style="display: none;">
+            <label class="form-label">Parameters:</label>
+            <div id="parametersContainer" class="row g-3"></div>
+        </div>
+
+        <!-- Submit Button -->
+        <div class="text-end">
+            <button type="submit" class="btn btn-success">Generate Report</button>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <script>
+        var reportList = @Html.Raw(Json.Serialize(Model));
+
+        function reportSelected() {
+            var reportId = document.getElementById('reportId').value;
+            var selectedReport = reportList.find(r => r.id == Number(reportId));
+            if (selectedReport) {
+                document.getElementById('spName').value = selectedReport.sP_Name;
+                document.getElementById('spNameDiv').style.display = 'block';
+
+                const parameters = selectedReport.parameters ? JSON.parse(selectedReport.parameters) : [];
+                createParameterFields(parameters);
+            } else {
+                document.getElementById('spNameDiv').style.display = 'none';
+                document.getElementById('parametersDiv').style.display = 'none';
+            }
+        }
+
+        function createParameterFields(parameters) {
+            const container = document.getElementById('parametersContainer');
+            container.innerHTML = '';
+
+            if (parameters && Array.isArray(parameters)) {
+                parameters.forEach(function (paramObj) {
+                    if (!paramObj || !paramObj.Name) return;
+
+                    const paramTrimmed = paramObj.Name.trim();
+                    const paramLower = paramTrimmed.toLowerCase();
+
+                    const paramDiv = document.createElement('div');
+                    paramDiv.classList.add('col-md-6');
+                    paramDiv.style.marginBottom = '10px';
+
+                    const label = document.createElement('label');
+                    label.classList.add('form-label');
+                    label.innerText = paramTrimmed + ':';
+
+                    const input = document.createElement('input');
+                    input.name = 'parameters[' + paramTrimmed + ']';
+                    input.classList.add('form-control');
+                    input.required = paramObj.IsRequired === true;
+
+                    // Check the type of the parameter
+                    const paramType = paramObj.Type ? paramObj.Type.toLowerCase() : '';
+
+                    // Set the input field based on the type
+                    if (paramType === 'int' || paramType === 'integer') {
+                        input.type = 'number';
+                        input.placeholder = 'Enter an integer';
+                        input.min = 0;  // You can adjust the minimum value as needed
+                    } else if (paramLower.includes('pancard') || paramLower === 'pan') {
+                        input.type = 'text';
+                        input.pattern = '[A-Z]{5}[0-9]{4}[A-Z]{1}';  // Validation pattern
+                        input.title = 'Enter a valid Pancard number (e.g., ABCDE1234F)';
+                        input.maxLength = 10;
+                        input.placeholder = 'ABCDE1234F';
+                        input.style.textTransform = 'uppercase';  // Force uppercase
+
+                        // Real-time validation for PanCard (uppercase letters + numbers only)
+                        input.oninput = function () {
+                            this.value = this.value.toUpperCase();  // Enforce uppercase
+                            if (!/^[A-Z]{0,5}[0-9]{0,4}[A-Z]{0,1}$/.test(this.value)) {
+                                this.setCustomValidity('Invalid PanCard number');
+                            } else {
+                                this.setCustomValidity('');
+                            }
+                        };
+                    } else if (paramLower.includes('email')) {
+                        // **Moved email check here before varchar/text**
+                        input.type = 'email';
+                        input.placeholder = 'example@domain.com';
+                    } else if (paramType === 'varchar' || paramType === 'text') {
+                        input.type = 'text';
+                        input.placeholder = 'Enter text';
+                    } else if (paramType === 'date') {
+                        const today = new Date().toISOString().split('T')[0];
+                        const lastYear = new Date();
+                        lastYear.setFullYear(lastYear.getFullYear() - 1);
+                        const lastYearStr = lastYear.toISOString().split('T')[0];
+
+                        input.type = 'date';
+                        input.min = lastYearStr;
+                        input.max = today;
+                    } else {
+                        input.type = 'text';
+                        input.placeholder = 'Enter value';
+                    }
+
+                    paramDiv.appendChild(label);
+                    paramDiv.appendChild(input);
+                    container.appendChild(paramDiv);
+                });
+
+                document.getElementById('parametersDiv').style.display = 'block';
+            } else {
+                document.getElementById('parametersDiv').style.display = 'none';
+            }
+        }
+
+        // Client-side form validation before submit
+        function validateForm() {
+            var reportId = document.getElementById('reportId').value;
+            var errorMessages = [];
+            var isValid = true;
+
+            // Clear previous error messages
+            document.getElementById('reportIdError').innerHTML = '';
+            document.getElementById('reportId').classList.remove('is-invalid');
+
+            if (!reportId) {
+                document.getElementById('reportIdError').innerHTML = 'Please select a report.';
+                document.getElementById('reportId').classList.add('is-invalid');
+                isValid = false;
+            }
+
+            var selectedReport = reportList.find(r => r.id == Number(reportId));
+            if (!selectedReport) {
+                document.getElementById('reportIdError').innerHTML = 'Selected report not found.';
+                document.getElementById('reportId').classList.add('is-invalid');
+                isValid = false;
+            }
+
+            const parameters = selectedReport ? (selectedReport.parameters ? JSON.parse(selectedReport.parameters) : []) : [];
+
+            // Validate each required parameter is filled and type checks
+            parameters.forEach(function (paramObj) {
+                if (!paramObj || !paramObj.Name) return;
+
+                const paramName = paramObj.Name.trim();
+                const input = document.querySelector(`[Name='parameters[${paramName}]']`);
+                const errorContainer = document.createElement('div');
+                errorContainer.classList.add('invalid-feedback');
+
+                if (!input) return;
+
+                const value = input.value.trim();
+
+                if (paramObj.IsRequired && !value) {
+                    input.classList.add('is-invalid');
+                    errorContainer.innerHTML = `Parameter "${paramName}" is required.`;
+                    input.parentElement.appendChild(errorContainer);
+                    isValid = false;
+                } else {
+                    input.classList.remove('is-invalid');
+                }
+
+                if (value) {
+                    const type = paramObj.Type ? paramObj.Type.toLowerCase() : null;
+
+                    // Validate integer input
+                    if (type === 'int' || type === 'integer') {
+                        if (!/^-?\d+$/.test(value)) {
+                            input.classList.add('is-invalid');
+                            errorContainer.innerHTML = `Parameter "${paramName}" must be an integer.`;
+                            input.parentElement.appendChild(errorContainer);
+                            isValid = false;
+                        }
+                    } else if (type === 'number' || type === 'float' || type === 'double') {
+                        if (isNaN(value)) {
+                            input.classList.add('is-invalid');
+                            errorContainer.innerHTML = `Parameter "${paramName}" must be a valid number.`;
+                            input.parentElement.appendChild(errorContainer);
+                            isValid = false;
+                        }
+                    } 
+                    else if (type === 'date') {
+                        // Additional check for date type
+                        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+                        if (!dateRegex.test(value)) {
+                            input.classList.add('is-invalid');
+                            errorContainer.innerHTML = `Parameter "${paramName}" must be a valid date.`;
+                            input.parentElement.appendChild(errorContainer);
+                            isValid = false;
+                        }
+                    }
+
+                }
+            });
+
+            return isValid;
+        }
+    </script>
+}
+
